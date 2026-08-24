@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fabric Atlas change map</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <h1>Fabric Atlas change map</h1>
+  <p class="lede">A quick path from intent to the Terraform surface that owns it.</p>
+
+  <table>
+    <thead><tr><th>Intent</th><th>Start here</th><th>Resource reached</th></tr></thead>
+    <tbody>
+      <tr><td>Add or change the client’s shared cluster</td><td><code>{client}/client-locals/locals.tf</code>, then <code>{client}/core/compute_storage.tf</code></td><td><code>mongodbatlas_advanced_cluster.deployment</code></td></tr>
+      <tr><td>Give a namespace a DB on a shared cluster</td><td><code>{client}/compute-bootstrap/locals.tf</code>: <code>mongo_databases_in_atlas_cluster</code></td><td>Scoped blue/green database users and a Key Vault connection string; the DB appears on first write</td></tr>
+      <tr><td>Give a namespace a dedicated cluster</td><td><code>{client}/compute-bootstrap/locals.tf</code>: <code>namespaced_atlas_cluster</code></td><td><code>mongodbatlas_advanced_cluster.deployment</code>, users, backups, and secrets</td></tr>
+      <tr><td>Change cluster size or autoscaling</td><td>Cluster config passed to <code>atlas-replicaset</code></td><td>Replication specs on the advanced cluster</td></tr>
+      <tr><td>Change human access</td><td><code>{client}/core/compute_storage.tf</code></td><td>Project-wide Entra workforce OIDC database users</td></tr>
+      <tr><td>Change workload access</td><td>Application access outputs, then <code>cluster-bootstrap/application_identities.tf</code></td><td>Cluster-scoped Azure workload OIDC database users</td></tr>
+      <tr><td>Change password rotation</td><td><code>atlas-blue-green-user</code> and <code>util/blue-green-rotation</code></td><td>Alternating blue and green users plus Key Vault secrets</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Isolation hierarchy</h2>
+  <pre>Atlas organization
+└── client + Atlas project tier (testing | staging | prod)
+    ├── shared cluster
+    │   └── database + scoped users per namespace
+    └── dedicated namespaced cluster
+        └── application and data-platform users</pre>
+
+  <h2>Vocabulary guardrails</h2>
+  <table>
+    <thead><tr><th>Word</th><th>Repository meaning</th><th>Do not confuse with</th></tr></thead>
+    <tbody>
+      <tr><td>Compute tier</td><td>Lifecycle class such as latestcommit, staging, or production; controls backups, protection, and project routing</td><td>MongoDB machine size</td></tr>
+      <tr><td>Atlas project tier</td><td>testing, staging, or prod project boundary</td><td>Compute tier</td></tr>
+      <tr><td>Instance size</td><td>Atlas capacity such as M10/M20</td><td>Either tier above</td></tr>
+      <tr><td>Client</td><td>Fabric deployment/customer boundary such as DMO, AHX, or KFL</td><td>Application tenant</td></tr>
+      <tr><td>Banner</td><td>Retail operating brand; represented as <code>subbrand</code> in Terraform</td><td>Client</td></tr>
+      <tr><td>Tenant</td><td>Context-dependent runtime consumer; no general first-class Terraform map exists</td><td>Azure/Entra tenant ID</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warning">
+    <strong>Before changing anything:</strong> identify the client, compute tier, derived Atlas project tier,
+    banner/subbrand, namespace, persistence model, role, scope, vault, backup policy, and whether the plan replaces a cluster.
+  </div>
+  <p><a href="../lessons/0001-trace-atlas-provisioning.html">Return to lesson 1</a></p>
+</main>
+</body>
+</html>

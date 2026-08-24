@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Multitenancy across Fabric</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <p class="fine">Lesson 3 · Multitenancy · 20 minutes</p>
+  <h1>Trace one tenant across five repositories</h1>
+  <p class="lede">Your win: you will be able to review a tenant change end to end and identify where data could cross a retail-banner boundary.</p>
+
+  <div class="callout">
+    <strong>One-sentence model:</strong> one product deployment may serve several retail subbrands, but every request or job carries a validated tenant key that selects tenant-specific authorization, configuration, queues, source-data scope, and MongoDB credentials.
+  </div>
+
+  <h2>1. What “tenant” means here</h2>
+  <p>A tenant is normally a retail <strong>subbrand or banner</strong> inside a client deployment—not an Azure or Entra tenant. For example, one KFL Promo namespace can serve the <code>klde</code> and <code>klsk</code> banners. The tenant key is the application's stable routing key; <code>bannerCode</code> maps that tenant to its identity in the Fabric data platform.</p>
+
+  <table>
+    <thead><tr><th>Boundary</th><th>Example</th><th>What may be shared</th></tr></thead>
+    <tbody>
+      <tr><td>Client cluster</td><td><code>prod-kfl</code></td><td>AKS, Atlas cluster, network</td></tr>
+      <tr><td>Product environment</td><td><code>promo-demo-kfl</code></td><td>Pods, namespace, release</td></tr>
+      <tr><td>Application tenant</td><td><code>klde</code></td><td>Code and process only</td></tr>
+      <tr><td>Tenant database</td><td><code>promo-klde</code></td><td>Atlas cluster, not credentials</td></tr>
+      <tr><td>Common database</td><td><code>common-promo</code></td><td>Only intentionally common records</td></tr>
+    </tbody>
+  </table>
+
+  <p>This is a <strong>hybrid isolation model</strong>: infrastructure is shared at some outer layers, while databases and runtime context isolate the inner tenant boundary. Multitenancy therefore is not one feature or one filter. It is an unbroken chain.</p>
+
+  <h2>2. Follow the chain from Terraform to MongoDB</h2>
+  <div class="flow">
+    <div><strong>Infrastructure</strong>declares databases</div>
+    <div><strong>Deployment</strong>wires tenant config</div>
+    <div><strong>Authentication</strong>limits tenant access</div>
+    <div><strong>Context</strong>follows async work</div>
+    <div><strong>Persistence</strong>selects credentials</div>
+  </div>
+
+  <h3>Infrastructure creates the isolation capability</h3>
+  <p>In <a href="../../rtls-fabric-infrastructure/tf/prod/ie-db/kfl/compute-bootstrap/locals.tf">KFL compute configuration</a>, a namespace lists several <code>mongo_databases_in_atlas_cluster</code> entries. Assortment uses <code>assortment-klde</code>, <code>assortment-klro</code>, and <code>common-assortment</code>; Promo uses <code>promo-klde</code>, <code>promo-klsk</code>, and <code>common-promo</code>.</p>
+  <p>The <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-shared-cluster-database/main.tf">shared-cluster database module</a> creates a different Atlas user with <code>readWrite</code> scoped to one database, then stores a database-specific connection string in the namespace Key Vault. Atlas compute is shared; database authorization is not.</p>
+
+  <h3>Deployments join names to secrets</h3>
+  <p>The KFL values in <a href="../../rtls-fabric-deployments/assortment/prod/clients/kfl/kfl.values.yaml">Assortment</a> and <a href="../../rtls-fabric-deployments/promo/prod/clients/kfl/kfl.values.yaml">Promo</a> declare tenant names, banner codes, and allowed identity groups. Their Helm charts render two important products:</p>
+  <pre>tenant klde
+  → Dynaconf tenant entry: multitenancy.tenants.klde
+  → Kubernetes secret key: KLDE__MONGO_CONNECTION_STRING
+  → Key Vault secret: {namespace}-assortment-klde-mongodbatlas-pe-connection-string</pre>
+  <p>The same templates also wire <code>COMMON__MONGO_CONNECTION_STRING</code> to a product-specific common database. Naming it <code>common-assortment</code>, <code>common-pricing</code>, or <code>common-promo</code> prevents unrelated products sharing an Atlas cluster from accidentally sharing application state.</p>
+
+  <h2>3. A request becomes tenant-scoped</h2>
+  <p>Assortment, Pricing, and Promo implement the same core mechanism. The browser selects a tenant and sends <code>x-rtls-tenant</code> (the query parameter <code>?tenant=...</code> is also supported). Middleware does not trust that selector by itself:</p>
+  <pre>x-rtls-tenant: klde
+  → tenant exists in configuration?
+  → authenticated user has an allowed group?
+  → set rtls_context.tenantKey
+  → enter tenant's async context
+  → activate tenant's Mongo connection</pre>
+  <p>See the middleware in <a href="../../rtls-assortment/webtool/server/src/middleware/rtls-context.js">Assortment</a>, <a href="../../rtls-pricing/webtool/server/src/middleware/rtls-context.js">Pricing</a>, and <a href="../../rtls-promo-v3/webtool/server/src/middleware/rtls-context.js">Promo</a>. An unknown or unauthorized tenant returns <code>403</code>.</p>
+
+  <div class="callout warning">
+    <strong>The header is a selector, not proof of authorization.</strong> Isolation depends on validating it against both configured tenants and the authenticated user's tenant list before any tenant-aware operation runs.
+  </div>
+
+  <p>Node's <a href="../../rtls-pricing/webtool/server/src/utils/rtls-context-storage.js"><code>AsyncLocalStorage</code> wrapper</a> keeps <code>tenantKey</code> attached to the current asynchronous request and simultaneously activates the matching Labskit Mongo connection. Repository code can ask for the active connection without passing a tenant argument through every function.</p>
+
+  <h2>4. Configuration and analytics follow the same context</h2>
+  <p>Tenant isolation is also behavioral. The shared <a href="../../rtls-pricing/webtool/server/src/utils/config-accessor.js">Node config accessor</a> and <a href="../../rtls-pricing/analytics/analytics/config_accessor.py">Python config accessor</a> deep-merge a tenant's overrides over defaults while excluding other tenants and the reserved <code>common</code> key.</p>
+  <pre>default configuration
+       + klde overrides
+       = effective configuration for this klde request</pre>
+  <p>When Node submits analytics work, <code>rtls_context</code> crosses the process boundary. Python reconstructs it in a <a href="../../rtls-assortment/analytics/analytics/rtls_context.py"><code>ContextVar</code>-backed <code>RtlsContext</code></a>. Tenant-aware Mongo and Fabric-data access then resolve through that context. Scheduled work cannot rely on an HTTP header, so Helm generates per-tenant workflows and explicitly inserts <code>tenantKey</code>.</p>
+
+  <h2>5. What differs among the product repositories</h2>
+  <table>
+    <thead><tr><th>Repository</th><th>Tenant responsibility</th></tr></thead>
+    <tbody>
+      <tr><td><code>rtls-assortment</code></td><td>Request and analytics context, database selection, per-tenant configuration; KFL currently demonstrates <code>klde</code>/<code>klro</code>.</td></tr>
+      <tr><td><code>rtls-pricing</code></td><td>The same shared pattern, including propagated request/Dapr context, case normalization, tenant-prefixed Redis messages, and dedicated multitenant tests.</td></tr>
+      <tr><td><code>rtls-promo-v3</code></td><td>The same pattern plus tenant-prefixed Bull queues and tenant-aware callbacks; KFL demonstrates <code>klde</code>/<code>klsk</code>.</td></tr>
+    </tbody>
+  </table>
+  <p>The important similarity is architectural: all three products treat tenant context as ambient execution state and use it to choose configuration and persistence. Product-specific background work introduces extra places—queues, callbacks, workflows—where that state must be copied explicitly.</p>
+
+  <h2>6. Review a tenant change as a five-part contract</h2>
+  <table>
+    <thead><tr><th>Question</th><th>Failure if missed</th></tr></thead>
+    <tbody>
+      <tr><td>Does infrastructure create tenant and common DB credentials?</td><td>Missing secret or over-broad database access</td></tr>
+      <tr><td>Do deployment values use the same tenant and database names?</td><td>Secret lookup points at the wrong database</td></tr>
+      <tr><td>Do allowed groups map users to only intended tenants?</td><td>Unauthorized tenant becomes selectable</td></tr>
+      <tr><td>Does every request, job, event, queue, and callback carry context?</td><td>Work runs unscoped or under another tenant</td></tr>
+      <tr><td>Does code use tenant-aware config and connection accessors?</td><td>Defaults or another connection leak across tenants</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout warning">
+    <strong>Fail closed:</strong> in multitenant mode, missing or unknown context should be an error. Falling back to a default database makes a missing tenant look successful and is therefore the dangerous behavior.
+  </div>
+
+  <section class="quiz" data-quiz
+    data-correct-feedback="Correct. Selection becomes safe only after validation and context binding."
+    data-wrong-feedback="Not quite. A tenant name or database name alone does not establish authorization and execution scope.">
+    <h2>Retrieval check</h2>
+    <p>What makes an incoming tenant selection safe to use?</p>
+    <label><input type="radio" name="q1"> Request header alone</label>
+    <label><input type="radio" name="q1" data-correct="true"> Validated ambient context</label>
+    <label><input type="radio" name="q1"> Database name alone</label>
+    <button type="button">Check answer</button>
+    <p class="feedback" aria-live="polite"></p>
+  </section>
+
+  <h2>Practice on the repositories</h2>
+  <p>Trace KFL Promo tenant <code>klsk</code>. Find its tenant declaration, <code>bannerCode</code>, allowed group, Terraform database, database-scoped Atlas user, Key Vault secret name, ExternalSecret key, request validation, ambient Node context, Python context, tenant-specific queue name, and one per-tenant workflow argument. Compare your trace with the <a href="../reference/multitenancy-change-map.html">multitenancy change map</a>.</p>
+
+  <h2>Primary source</h2>
+  <p>Read the OWASP <a href="https://cheatsheetseries.owasp.org/cheatsheets/Multi_Tenant_Security_Cheat_Sheet.html">Multi-Tenant Security Cheat Sheet</a>. Focus on tenant-context validation, database isolation, authorization, background jobs, and logging; map each recommendation back to one hop above.</p>
+
+  <p class="fine"><a href="0002-dapr-eventing-architecture.html">Previous lesson: Dapr eventing</a>. Ask your teacher about any unclear tenant boundary or propagation hop.</p>
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

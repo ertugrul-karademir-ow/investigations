@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fabric Dapr eventing change map</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <h1>Fabric Dapr eventing change map</h1>
+  <p class="lede">Use this map to identify which layer owns an eventing change.</p>
+
+  <table>
+    <thead><tr><th>Concern</th><th>Owner in this repository</th><th>Runtime result</th></tr></thead>
+    <tbody>
+      <tr><td>Enable Dapr for a client cluster</td><td><code>{client}/compute-bootstrap/locals.tf</code>: cluster-level <code>dapr_enabled</code></td><td>Argo CD installs the Dapr control plane</td></tr>
+      <tr><td>Opt a namespace into Dapr</td><td><code>app_namespaces[].dapr_enabled</code></td><td>Identity federation and <code>dapr-enabled-sa</code></td></tr>
+      <tr><td>Select compute event bus</td><td><code>compute tier.default_events_tier</code></td><td>One testing, staging, or prod Service Bus namespace</td></tr>
+      <tr><td>Create compute event bus</td><td><code>compute_events.tf</code> and <code>events/servicebus-namespace</code></td><td>Standard Service Bus namespace with an IP allowlist</td></tr>
+      <tr><td>Authenticate from AKS</td><td><code>cluster-bootstrap/application_identities.tf</code></td><td>Service account → OIDC credential → managed identity → Service Bus RBAC</td></tr>
+      <tr><td>Install Dapr</td><td><code>charts/app-of-apps/latest/templates/dapr.yaml</code></td><td>Official Dapr Helm chart in <code>dapr-system</code></td></tr>
+      <tr><td>Define pub/sub component</td><td>Application/deployment configuration outside this repository</td><td>Dapr binds a named component to a Service Bus namespace</td></tr>
+      <tr><td>Define topic subscription and route</td><td>Application code or deployment configuration outside this repository</td><td>Service Bus subscription and delivery to an application endpoint</td></tr>
+      <tr><td>Publish ETL status events</td><td><code>modules/data/data-events</code></td><td>Databricks publishes to pre-created <code>fabric-data-etl</code> topic</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Compute event lane</h2>
+  <pre>compute tier
+  → default_events_tier (testing | staging | prod)
+  → tier-scoped Service Bus namespace
+  → managed identity shared by opted-in namespaces
+  → Dapr pub/sub Component
+  → topics and consumer subscriptions</pre>
+
+  <h2>Data event lane</h2>
+  <pre>data environment
+  → dedicated Service Bus namespace
+  → Terraform-created fabric-data-etl topic
+  → Databricks send-only connection string
+  → data-environment Dapr identity
+  → application subscriber</pre>
+
+  <h2>Identity chain</h2>
+  <pre>Pod using dapr-enabled-sa
+  → projected Kubernetes service-account token
+  → AKS OIDC issuer
+  → federated identity credential
+  → user-assigned managed identity
+  → custom DAPR Service Bus role
+  → Azure Service Bus namespace</pre>
+
+  <div class="callout warning">
+    <strong>Boundary check:</strong> Dapr is not the broker. It is the application-facing runtime and adapter;
+    Azure Service Bus stores and fans out messages. This repository builds the platform side, but does not show
+    the final application Component, sidecar annotations, topic contracts, or handler routes.
+  </div>
+
+  <p><a href="../lessons/0002-dapr-eventing-architecture.html">Return to lesson 2</a></p>
+</main>
+</body>
+</html>

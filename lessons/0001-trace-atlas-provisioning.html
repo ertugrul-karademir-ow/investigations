@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trace Atlas provisioning in Fabric</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <p class="fine">Lesson 1 · Repository architecture · 12 minutes</p>
+  <h1>Trace one Atlas change end to end</h1>
+  <p class="lede">Your win: given a namespace, you will be able to predict whether Terraform creates a cluster or only creates database access—and where.</p>
+
+  <div class="callout">
+    <strong>Mental model:</strong> client <em>core</em> owns Atlas projects and shared clusters.
+    Client <em>compute-bootstrap</em> owns namespace-specific dedicated clusters and shared-cluster database access.
+  </div>
+
+  <h2>1. Three meanings of “tier”</h2>
+  <table>
+    <thead><tr><th>Kind</th><th>Examples</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td>Compute environment tier</td><td><code>latestcommit</code>, <code>staging</code>, <code>production</code></td><td>Backup inclusion, termination protection, access behavior, and routing</td></tr>
+      <tr><td>Atlas project tier</td><td><code>testing</code>, <code>staging</code>, <code>prod</code></td><td>Separates Atlas projects and human access</td></tr>
+      <tr><td>Atlas instance size</td><td><code>M10</code>, <code>M20</code>, …</td><td>Compute capacity and cost</td></tr>
+    </tbody>
+  </table>
+  <p>The bridge is <code>compute_environment.tier.default_atlas_tier</code>. For example, <code>latestcommit</code> routes to the <code>testing</code> Atlas project, while <code>production</code> routes to <code>prod</code>. This is defined in <a href="../../rtls-fabric-infrastructure/tf/modules/environment-data/locals.tf">environment-data</a>.</p>
+
+  <h2>2. How clusters are created</h2>
+  <h3>Shared cluster path</h3>
+  <div class="flow">
+    <div><strong>Declare</strong><code>client-locals/locals.tf</code></div>
+    <div><strong>Enrich</strong><code>modules/client-locals</code></div>
+    <div><strong>Create</strong><code>core/compute_storage.tf</code></div>
+    <div><strong>Materialize</strong><code>mongodbatlas_advanced_cluster</code></div>
+  </div>
+  <p>DMO declares <code>dmo-demo</code> with compute tier <code>demo</code>. The client-locals module derives its <code>testing</code> Atlas project. The client core state creates that project, its Azure Private Link, then the shared cluster.</p>
+
+  <h3>Dedicated namespaced cluster path</h3>
+  <div class="flow">
+    <div><strong>Mark namespace</strong><code>namespaced_atlas_cluster</code></div>
+    <div><strong>Filter</strong><code>namespaces_to_create_atlas_persistence</code></div>
+    <div><strong>Instantiate</strong><code>atlas-namespaced-cluster</code></div>
+    <div><strong>Materialize</strong><code>mongodbatlas_advanced_cluster</code></div>
+  </div>
+  <p>The default cluster name is <code>{subbrand}-{tier-shortName}-{app}</code>. Thus a DMO latestcommit pricing namespace becomes <code>dmo-lc-pricing</code>. The final <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-replicaset/main.tf">replica-set module</a> sets topology, autoscaling, backups, tags, and termination protection.</p>
+
+  <div class="callout warning">
+    A namespace using <code>mongo_databases_in_atlas_cluster</code> does <strong>not</strong> create another cluster.
+    It creates a database-scoped user and connection string against an existing shared cluster. MongoDB creates the database on first write.
+  </div>
+
+  <h2>3. How users reach different clusters</h2>
+  <p>An Atlas database user belongs to a <strong>project</strong>. Its <code>scopes</code> can then restrict it to a named cluster, while its <code>roles</code> restrict what databases it can access.</p>
+  <table>
+    <thead><tr><th>User kind</th><th>Authentication</th><th>Scope and role</th></tr></thead>
+    <tbody>
+      <tr><td>Dedicated application</td><td>Blue/green username and password</td><td>One cluster; <code>readWriteAnyDatabase</code></td></tr>
+      <tr><td>Shared-cluster application</td><td>Blue/green username and password</td><td>One cluster and <code>readWrite</code> on one database</td></tr>
+      <tr><td>AKS workload</td><td>Azure workload OIDC</td><td>Derived from the same application-access map; no stored password</td></tr>
+      <tr><td>Human workforce</td><td>Entra group OIDC</td><td>Project-wide; prod makes only client admins writers and other groups readers</td></tr>
+      <tr><td>Data platform</td><td>Blue/green username and password</td><td>Cluster-wide read-only access</td></tr>
+    </tbody>
+  </table>
+  <p>Blue/green rotation keeps two Terraform-managed users. One is active while the other can rotate; connection strings point to the active credentials in Azure Key Vault. Read the <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-blue-green-user/main.tf">rotation module</a> and MongoDB’s <a href="https://www.mongodb.com/docs/atlas/security-add-mongodb-users/">database-user model</a>.</p>
+
+  <h2>4. Client, tenant, and banner</h2>
+  <p><strong>Client</strong> is the main infrastructure boundary: DMO, AHX, KFL, and so on. It commonly has its own resource group, AKS cluster, vaults, and tiered Atlas projects.</p>
+  <p><strong>Banner</strong> is the retail operating brand inside a client. Terraform calls it <code>subbrand</code>. AHX, for example, contains banners such as ADAB and ADDL. The pair <code>subbrand + compute tier</code> forms a compute environment and influences namespace, cluster, vault, and tag selection.</p>
+  <p><strong>Tenant</strong> is not a general first-class configuration object in this repository. In application discussions it usually means a runtime consumer sharing a multi-tenant service; in Azure code, <code>tenant_id</code> means the Entra directory. Never infer which meaning is intended. Generic subbrands such as <code>rtls</code> or <code>kfl</code> deliberately support resources shared by several banners.</p>
+
+  <section class="quiz" data-quiz
+    data-correct-feedback="Correct. The compute tier selects the Atlas project tier."
+    data-wrong-feedback="Not quite. Follow default_atlas_tier from the compute tier.">
+    <h2>Retrieval check</h2>
+    <p>A namespace has compute tier <code>latestcommit</code>. Which Atlas project tier does it use by default?</p>
+    <label><input type="radio" name="q1"> latestcommit</label>
+    <label><input type="radio" name="q1" data-correct="true"> testing&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</label>
+    <label><input type="radio" name="q1"> staging&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</label>
+    <button type="button">Check answer</button>
+    <p class="feedback" aria-live="polite"></p>
+  </section>
+
+  <h2>Practice on the repository</h2>
+  <p>Trace <code>pricing-latestcommit-dmo</code> from <a href="../../rtls-fabric-infrastructure/tf/prod/ie-db/dmo/compute-bootstrap/locals.tf">the namespace declaration</a>. Identify its banner, compute tier, Atlas project tier, shared cluster, database name, role, cluster scope, and destination vault. Then compare your trace with the <a href="../reference/atlas-change-map.html">Atlas change map</a>.</p>
+
+  <h2>Primary source</h2>
+  <p>Read MongoDB’s <a href="https://www.mongodb.com/docs/atlas/tutorial/manage-projects/">Atlas Projects</a> documentation. Focus on the fact that clusters, database users, and project membership are governed at different layers.</p>
+  <p class="fine">Ask your teacher about any link in the trace that is unclear—especially a boundary where a value changes name or scope.</p>
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

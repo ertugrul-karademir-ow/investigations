@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dapr in Fabric eventing</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <p class="fine">Lesson 2 · Eventing architecture · 15 minutes</p>
+  <h1>Follow an event through Dapr and Fabric</h1>
+  <p class="lede">Your win: you will be able to separate what the application, Dapr, Azure Service Bus, Terraform, and Argo CD each own.</p>
+
+  <div class="callout">
+    <strong>One-sentence model:</strong> applications speak Dapr's pub/sub API, a Dapr Component adapts those calls to Azure Service Bus, and Service Bus durably stores and fans out the messages.
+  </div>
+
+  <h2>1. Dapr is the adapter, not the broker</h2>
+  <div class="flow">
+    <div><strong>Publisher</strong>calls a local Dapr API</div>
+    <div><strong>Dapr sidecar</strong>wraps and translates the event</div>
+    <div><strong>Service Bus</strong>stores it on a topic</div>
+    <div><strong>Subscription</strong>selects a consumer copy</div>
+    <div><strong>Dapr sidecar</strong>calls the subscriber route</div>
+  </div>
+  <p>The publisher knows a Dapr component name and topic, not Service Bus credentials or a consumer address. The subscriber declares interest in a topic and a handler route. Dapr provides an <strong>at-least-once</strong> delivery model, so handlers must tolerate duplicate delivery. See Dapr's <a href="https://docs.dapr.io/developing-applications/building-blocks/pubsub/pubsub-overview/">pub/sub overview</a>.</p>
+
+  <h2>2. Fabric has two event lanes</h2>
+  <table>
+    <thead><tr><th>Lane</th><th>Boundary</th><th>Typical flow</th></tr></thead>
+    <tbody>
+      <tr><td>Compute events</td><td>One Service Bus namespace per client and event tier</td><td>Application-to-application pub/sub through Dapr</td></tr>
+      <tr><td>Data events</td><td>One Service Bus namespace per data environment</td><td>Databricks ETL status event to an application subscriber</td></tr>
+    </tbody>
+  </table>
+  <p>Compute tiers map to only three event tiers through <code>default_events_tier</code>: most short-lived tiers share <code>testing</code>, while staging and production use separate buses. This avoids a Service Bus namespace per application namespace while preserving the important environment boundaries.</p>
+
+  <h2>3. How the compute lane is provisioned</h2>
+  <p>Use DEV DMO as the concrete example. Cluster-level <code>dapr_enabled = true</code> enables the Dapr platform. A namespace such as <code>assortment-latestcommit-dmo</code> separately sets <code>dapr_enabled = true</code>. Its <code>latestcommit</code> compute tier maps to the <code>testing</code> event tier.</p>
+
+  <div class="flow">
+    <div><strong>Opt in</strong><code>dapr_enabled</code></div>
+    <div><strong>Map tier</strong><code>default_events_tier</code></div>
+    <div><strong>Create bus</strong><code>compute_events.tf</code></div>
+    <div><strong>Create identity</strong><code>application_identities.tf</code></div>
+    <div><strong>Install Dapr</strong>Argo CD + Helm</div>
+  </div>
+
+  <p><a href="../../rtls-fabric-infrastructure/tf/dev/ie-db/dmo/compute-bootstrap/compute_events.tf"><code>compute_events.tf</code></a> takes the distinct event tiers used by opted-in namespaces and creates one Service Bus namespace for each. The Service Bus module uses Standard SKU and denies traffic except listed AKS and corporate egress IPs.</p>
+
+  <div class="callout warning">
+    <strong>Two gates are required:</strong> the cluster-level flag installs Dapr and enables identity wiring;
+    the namespace-level flag opts in a workload. In the current Terraform, Service Bus tier discovery checks the
+    namespace flag but not the cluster flag, so a bus can exist while the Dapr control plane and identities remain disabled.
+  </div>
+
+  <h2>4. Passwordless access: service account to Service Bus</h2>
+  <p>For each compute event tier, Terraform creates one user-assigned managed identity and grants it the custom <code>DAPR Service Bus</code> role on that tier's Service Bus namespace. Every opted-in Kubernetes namespace receives a federated credential on that identity.</p>
+  <pre>system:serviceaccount:assortment-latestcommit-dmo:dapr-enabled-sa
+  → AKS OIDC federation
+  → testing-tier managed identity
+  → DAPR Service Bus role
+  → rtls-dev-dmo-testing Service Bus namespace</pre>
+  <p>The namespace Helm chart creates the annotated <code>dapr-enabled-sa</code>. The exact service-account name must match the federated credential's subject. The managed identity client ID is also saved as <code>dapr-managed-identity-client-id</code> in the environment Key Vault so a Dapr Component can resolve it without hard-coding.</p>
+
+  <h2>5. Control plane, sidecars, and Components</h2>
+  <p>Terraform hands values to the app-of-apps chart. Argo CD then installs the official Dapr Helm chart into <code>dapr-system</code>. That is the cluster-wide <strong>control plane</strong>.</p>
+  <p>The application deployment must still request a Dapr <strong>sidecar</strong>, use the expected service account, and provide a <strong>pub/sub Component</strong> of type <code>pubsub.azure.servicebus.topics</code>. The Component names the Service Bus namespace and authentication metadata. Subscriptions then connect topics to application routes.</p>
+
+  <div class="callout warning">
+    This infrastructure repository does not contain the final Azure Service Bus pub/sub Component or application subscription manifests.
+    Those belong to application/deployment configuration. Therefore, this repo proves that the platform and identity path exist—not that a particular topic contract or handler is wired correctly.
+  </div>
+
+  <h2>6. The separate data-event path</h2>
+  <p>The data platform creates a Service Bus namespace per data environment and a fixed <code>fabric-data-etl</code> topic. Databricks receives a send-only topic connection string in the data Key Vault and publishes ETL events directly. For Dapr-enabled application namespaces linked by <code>data_environment_key</code>, Terraform creates separate data-event managed identities and federation.</p>
+  <p>Unlike compute identities, data-event identities are bucketed in groups of 20 namespaces to respect Azure's federated-credential limit. Compute event identities currently contain a TODO for the same limit.</p>
+
+  <section class="quiz" data-quiz
+    data-correct-feedback="Correct. Service Bus is the durable broker; Dapr is the API and adapter."
+    data-wrong-feedback="Not quite. Separate the application API layer from the durable message broker.">
+    <h2>Retrieval check</h2>
+    <p>Which component durably stores an event while its consumer is temporarily unavailable?</p>
+    <label><input type="radio" name="q1"> Dapr sidecar&nbsp;&nbsp;&nbsp;</label>
+    <label><input type="radio" name="q1" data-correct="true"> Service Bus&nbsp;&nbsp;&nbsp;&nbsp;</label>
+    <label><input type="radio" name="q1"> Argo CD app&nbsp;&nbsp;&nbsp;</label>
+    <button type="button">Check answer</button>
+    <p class="feedback" aria-live="polite"></p>
+  </section>
+
+  <h2>Practice on the repository</h2>
+  <p>Trace <code>assortment-latestcommit-dmo</code> in DEV. Find both Dapr gates, its compute tier, derived event tier, Service Bus name, managed identity, federated subject, Kubernetes service account, Key Vault secret, and the point where this repository hands control to application deployment configuration. Compare your result with the <a href="../reference/dapr-eventing-change-map.html">Dapr eventing change map</a>.</p>
+
+  <h2>Primary source</h2>
+  <p>Read the Dapr <a href="https://docs.dapr.io/reference/components-reference/supported-pubsub/setup-azure-servicebus-topics/">Azure Service Bus Topics component</a> documentation. Focus on <code>namespaceName</code>, Entra authentication, <code>consumerID</code>, and <code>disableEntityManagement</code>.</p>
+
+  <p class="fine"><a href="0001-trace-atlas-provisioning.html">Previous lesson: Atlas provisioning</a>. Ask your teacher about any unclear ownership boundary or identity hop.</p>
+</main>
+<script src="../assets/quiz.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fabric multitenancy change map</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<main>
+  <h1>Fabric multitenancy change map</h1>
+  <p class="lede">Use this map to trace a tenant addition or diagnose an isolation break.</p>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Source of truth</th><th>Output</th></tr></thead>
+    <tbody>
+      <tr><td>Vocabulary</td><td><code>environment-data/client_subbrands_map</code></td><td>Recognized client subbrands</td></tr>
+      <tr><td>Namespace</td><td><code>app_namespaces</code></td><td>Product/environment Kubernetes boundary</td></tr>
+      <tr><td>Persistence</td><td><code>mongo_databases_in_atlas_cluster</code></td><td>Tenant and common DB users and Key Vault secrets</td></tr>
+      <tr><td>Deployment</td><td><code>client.multitenancy.tenants</code></td><td>Tenant keys, banner codes, allowed groups</td></tr>
+      <tr><td>Secret wiring</td><td>Helm <code>external-secrets.yaml</code></td><td><code>{TENANT}__MONGO_CONNECTION_STRING</code></td></tr>
+      <tr><td>HTTP boundary</td><td><code>rtls-context</code> middleware</td><td>Validated <code>rtls_context.tenantKey</code></td></tr>
+      <tr><td>Node execution</td><td><code>AsyncLocalStorage</code></td><td>Ambient context plus active Mongo connection</td></tr>
+      <tr><td>Python execution</td><td><code>RtlsContext</code> / <code>ContextVar</code></td><td>Tenant-aware config, data, and Mongo access</td></tr>
+      <tr><td>Background work</td><td>Queue IDs, job payloads, workflow arguments</td><td>Tenant scope survives process boundaries</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Tenant request path</h2>
+  <pre>authenticated user
+  → x-rtls-tenant / ?tenant
+  → configured-tenant check
+  → user-tenant authorization check
+  → rtls_context.tenantKey
+  → tenant config + tenant Mongo connection
+  → downstream job/event retains rtls_context</pre>
+
+  <h2>KFL examples</h2>
+  <table>
+    <thead><tr><th>Deployment</th><th>Tenants</th><th>Databases</th></tr></thead>
+    <tbody>
+      <tr><td><code>assortment-*-kfl</code></td><td><code>klde</code>, <code>klro</code></td><td><code>assortment-klde</code>, <code>assortment-klro</code>, <code>common-assortment</code></td></tr>
+      <tr><td><code>promo-*-kfl</code></td><td><code>klde</code>, <code>klsk</code></td><td><code>promo-klde</code>, <code>promo-klsk</code>, <code>common-promo</code></td></tr>
+    </tbody>
+  </table>
+
+  <h2>Invariant checklist</h2>
+  <pre>same tenant key at every hop
+database user scoped readWrite to one tenant DB
+common DB selected only through explicit common accessor
+header accepted only after user authorization
+tenant config cannot contain another tenant's values
+jobs, events, queues, and callbacks preserve tenant context
+missing context fails closed in multitenant mode</pre>
+
+  <div class="callout warning">
+    <strong>Do not confuse identifiers:</strong> the tenant key routes application work; the banner code selects
+    the corresponding retail data; the namespace identifies a product environment; the client identifies the
+    outer infrastructure boundary.
+  </div>
+
+  <p><a href="../lessons/0003-multitenancy-across-fabric.html">Return to lesson 3</a></p>
+</main>
+</body>
+</html>
