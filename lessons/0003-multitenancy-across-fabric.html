@@ -42,11 +42,11 @@
   </div>
 
   <h3>Infrastructure creates the isolation capability</h3>
-  <p>In <a href="../../rtls-fabric-infrastructure/tf/prod/ie-db/kfl/compute-bootstrap/locals.tf">KFL compute configuration</a>, a namespace lists several <code>mongo_databases_in_atlas_cluster</code> entries. Assortment uses <code>assortment-klde</code>, <code>assortment-klro</code>, and <code>common-assortment</code>; Promo uses <code>promo-klde</code>, <code>promo-klsk</code>, and <code>common-promo</code>.</p>
-  <p>The <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-shared-cluster-database/main.tf">shared-cluster database module</a> creates a different Atlas user with <code>readWrite</code> scoped to one database, then stores a database-specific connection string in the namespace Key Vault. Atlas compute is shared; database authorization is not.</p>
+  <p>In <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/prod/ie-db/kfl/compute-bootstrap/locals.tf">KFL compute configuration</a>, a namespace lists several <code>mongo_databases_in_atlas_cluster</code> entries. Assortment uses <code>assortment-klde</code>, <code>assortment-klro</code>, and <code>common-assortment</code>; Promo uses <code>promo-klde</code>, <code>promo-klsk</code>, and <code>common-promo</code>.</p>
+  <p>The <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/modules/compute/mongodb-atlas/atlas-shared-cluster-database/main.tf">shared-cluster database module</a> creates a different Atlas user with <code>readWrite</code> scoped to one database, then stores a database-specific connection string in the namespace Key Vault. Atlas compute is shared; database authorization is not.</p>
 
   <h3>Deployments join names to secrets</h3>
-  <p>The KFL values in <a href="../../rtls-fabric-deployments/assortment/prod/clients/kfl/kfl.values.yaml">Assortment</a> and <a href="../../rtls-fabric-deployments/promo/prod/clients/kfl/kfl.values.yaml">Promo</a> declare tenant names, banner codes, and allowed identity groups. Their Helm charts render two important products:</p>
+  <p>The KFL values in <a href="https://github.com/owg-digital/rtls-fabric-deployments/blob/main/assortment/prod/clients/kfl/kfl.values.yaml">Assortment</a> and <a href="https://github.com/owg-digital/rtls-fabric-deployments/blob/main/promo/prod/clients/kfl/kfl.values.yaml">Promo</a> declare tenant names, banner codes, and allowed identity groups. Their Helm charts render two important products:</p>
   <pre>tenant klde
   → Dynaconf tenant entry: multitenancy.tenants.klde
   → Kubernetes secret key: KLDE__MONGO_CONNECTION_STRING
@@ -61,20 +61,20 @@
   → set rtls_context.tenantKey
   → enter tenant's async context
   → activate tenant's Mongo connection</pre>
-  <p>See the middleware in <a href="../../rtls-assortment/webtool/server/src/middleware/rtls-context.js">Assortment</a>, <a href="../../rtls-pricing/webtool/server/src/middleware/rtls-context.js">Pricing</a>, and <a href="../../rtls-promo-v3/webtool/server/src/middleware/rtls-context.js">Promo</a>. An unknown or unauthorized tenant returns <code>403</code>.</p>
+  <p>See the middleware in <a href="https://github.com/owg-digital/rtls-assortment/blob/main/webtool/server/src/middleware/rtls-context.js">Assortment</a>, <a href="https://github.com/owg-digital/rtls-pricing/blob/main/webtool/server/src/middleware/rtls-context.js">Pricing</a>, and <a href="https://github.com/owg-digital/rtls-promo-v3/blob/main/webtool/server/src/middleware/rtls-context.js">Promo</a>. An unknown or unauthorized tenant returns <code>403</code>.</p>
 
   <div class="callout warning">
     <strong>The header is a selector, not proof of authorization.</strong> Isolation depends on validating it against both configured tenants and the authenticated user's tenant list before any tenant-aware operation runs.
   </div>
 
-  <p>Node's <a href="../../rtls-pricing/webtool/server/src/utils/rtls-context-storage.js"><code>AsyncLocalStorage</code> wrapper</a> keeps <code>tenantKey</code> attached to the current asynchronous request and simultaneously activates the matching Labskit Mongo connection. Repository code can ask for the active connection without passing a tenant argument through every function.</p>
+  <p>Node's <a href="https://github.com/owg-digital/rtls-pricing/blob/main/webtool/server/src/utils/rtls-context-storage.js"><code>AsyncLocalStorage</code> wrapper</a> keeps <code>tenantKey</code> attached to the current asynchronous request and simultaneously activates the matching Labskit Mongo connection. Repository code can ask for the active connection without passing a tenant argument through every function.</p>
 
   <h2>4. Configuration and analytics follow the same context</h2>
-  <p>Tenant isolation is also behavioral. The shared <a href="../../rtls-pricing/webtool/server/src/utils/config-accessor.js">Node config accessor</a> and <a href="../../rtls-pricing/analytics/analytics/config_accessor.py">Python config accessor</a> deep-merge a tenant's overrides over defaults while excluding other tenants and the reserved <code>common</code> key.</p>
+  <p>Tenant isolation is also behavioral. The shared <a href="https://github.com/owg-digital/rtls-pricing/blob/main/webtool/server/src/utils/config-accessor.js">Node config accessor</a> and <a href="https://github.com/owg-digital/rtls-pricing/blob/main/analytics/analytics/config_accessor.py">Python config accessor</a> deep-merge a tenant's overrides over defaults while excluding other tenants and the reserved <code>common</code> key.</p>
   <pre>default configuration
        + klde overrides
        = effective configuration for this klde request</pre>
-  <p>When Node submits analytics work, <code>rtls_context</code> crosses the process boundary. Python reconstructs it in a <a href="../../rtls-assortment/analytics/analytics/rtls_context.py"><code>ContextVar</code>-backed <code>RtlsContext</code></a>. Tenant-aware Mongo and Fabric-data access then resolve through that context. Scheduled work cannot rely on an HTTP header, so Helm generates per-tenant workflows and explicitly inserts <code>tenantKey</code>.</p>
+  <p>When Node submits analytics work, <code>rtls_context</code> crosses the process boundary. Python reconstructs it in a <a href="https://github.com/owg-digital/rtls-assortment/blob/main/analytics/analytics/rtls_context.py"><code>ContextVar</code>-backed <code>RtlsContext</code></a>. Tenant-aware Mongo and Fabric-data access then resolve through that context. Scheduled work cannot rely on an HTTP header, so Helm generates per-tenant workflows and explicitly inserts <code>tenantKey</code>.</p>
 
   <h2>5. What differs among the product repositories</h2>
   <table>

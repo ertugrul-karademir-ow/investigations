@@ -26,7 +26,7 @@
       <tr><td>Atlas instance size</td><td><code>M10</code>, <code>M20</code>, …</td><td>Compute capacity and cost</td></tr>
     </tbody>
   </table>
-  <p>The bridge is <code>compute_environment.tier.default_atlas_tier</code>. For example, <code>latestcommit</code> routes to the <code>testing</code> Atlas project, while <code>production</code> routes to <code>prod</code>. This is defined in <a href="../../rtls-fabric-infrastructure/tf/modules/environment-data/locals.tf">environment-data</a>.</p>
+  <p>The bridge is <code>compute_environment.tier.default_atlas_tier</code>. For example, <code>latestcommit</code> routes to the <code>testing</code> Atlas project, while <code>production</code> routes to <code>prod</code>. This is defined in <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/modules/environment-data/locals.tf">environment-data</a>.</p>
 
   <h2>2. How clusters are created</h2>
   <h3>Shared cluster path</h3>
@@ -45,7 +45,7 @@
     <div><strong>Instantiate</strong><code>atlas-namespaced-cluster</code></div>
     <div><strong>Materialize</strong><code>mongodbatlas_advanced_cluster</code></div>
   </div>
-  <p>The default cluster name is <code>{subbrand}-{tier-shortName}-{app}</code>. Thus a DMO latestcommit pricing namespace becomes <code>dmo-lc-pricing</code>. The final <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-replicaset/main.tf">replica-set module</a> sets topology, autoscaling, backups, tags, and termination protection.</p>
+  <p>The default cluster name is <code>{subbrand}-{tier-shortName}-{app}</code>. Thus a DMO latestcommit pricing namespace becomes <code>dmo-lc-pricing</code>. The final <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/modules/compute/mongodb-atlas/atlas-replicaset/main.tf">replica-set module</a> sets topology, autoscaling, backups, tags, and termination protection.</p>
 
   <div class="callout warning">
     A namespace using <code>mongo_databases_in_atlas_cluster</code> does <strong>not</strong> create another cluster.
@@ -64,7 +64,7 @@
       <tr><td>Data platform</td><td>Blue/green username and password</td><td>Cluster-wide read-only access</td></tr>
     </tbody>
   </table>
-  <p>Blue/green rotation keeps two Terraform-managed users. One is active while the other can rotate; connection strings point to the active credentials in Azure Key Vault. Read the <a href="../../rtls-fabric-infrastructure/tf/modules/compute/mongodb-atlas/atlas-blue-green-user/main.tf">rotation module</a> and MongoDB’s <a href="https://www.mongodb.com/docs/atlas/security-add-mongodb-users/">database-user model</a>.</p>
+  <p>Blue/green rotation keeps two Terraform-managed users. One is active while the other can rotate; connection strings point to the active credentials in Azure Key Vault. Read the <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/modules/compute/mongodb-atlas/atlas-blue-green-user/main.tf">rotation module</a> and MongoDB’s <a href="https://www.mongodb.com/docs/atlas/security-add-mongodb-users/">database-user model</a>.</p>
 
   <h2>4. Client, tenant, and banner</h2>
   <p><strong>Client</strong> is the main infrastructure boundary: DMO, AHX, KFL, and so on. It commonly has its own resource group, AKS cluster, vaults, and tiered Atlas projects.</p>
@@ -84,7 +84,7 @@
   </section>
 
   <h2>Practice on the repository</h2>
-  <p>Trace <code>pricing-latestcommit-dmo</code> from <a href="../../rtls-fabric-infrastructure/tf/prod/ie-db/dmo/compute-bootstrap/locals.tf">the namespace declaration</a>. Identify its banner, compute tier, Atlas project tier, shared cluster, database name, role, cluster scope, and destination vault. Then compare your trace with the <a href="../reference/atlas-change-map.html">Atlas change map</a>.</p>
+  <p>Trace <code>pricing-latestcommit-dmo</code> from <a href="https://github.com/owg-digital/rtls-fabric-infrastructure/blob/main/tf/prod/ie-db/dmo/compute-bootstrap/locals.tf">the namespace declaration</a>. Identify its banner, compute tier, Atlas project tier, shared cluster, database name, role, cluster scope, and destination vault. Then compare your trace with the <a href="../reference/atlas-change-map.html">Atlas change map</a>.</p>
 
   <h2>Primary source</h2>
   <p>Read MongoDB’s <a href="https://www.mongodb.com/docs/atlas/tutorial/manage-projects/">Atlas Projects</a> documentation. Focus on the fact that clusters, database users, and project membership are governed at different layers.</p>

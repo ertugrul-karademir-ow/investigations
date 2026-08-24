@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Repository-grounded lessons for safely changing RTLS Fabric infrastructure.">
+  <title>RTLS Fabric investigations</title>
+  <link rel="stylesheet" href="assets/course.css">
+</head>
+<body>
+<main>
+  <p class="fine">RTLS Fabric · Repository-guided course</p>
+  <h1>Fabric infrastructure investigations</h1>
+  <p class="lede">Short, practical lessons for tracing changes across Terraform, Argo CD, Helm, cloud services, and application runtime boundaries.</p>
+
+  <div class="callout">
+    <strong>Course mission:</strong> modify or extend Fabric infrastructure without crossing client, environment, identity, data, eventing, or tenant boundaries.
+  </div>
+
+  <h2>Lessons</h2>
+  <div class="flow">
+    <div>
+      <strong>1 · Atlas provisioning</strong>
+      Trace a namespace from client configuration to Atlas projects, clusters, users, and secrets.
+      <p><a href="lessons/0001-trace-atlas-provisioning.html">Start lesson 1</a></p>
+    </div>
+    <div>
+      <strong>2 · Dapr eventing</strong>
+      Separate application, Dapr, Service Bus, Terraform, and Argo CD ownership.
+      <p><a href="lessons/0002-dapr-eventing-architecture.html">Start lesson 2</a></p>
+    </div>
+    <div>
+      <strong>3 · Multitenancy</strong>
+      Follow tenant isolation through infrastructure, deployment, authorization, context, and persistence.
+      <p><a href="lessons/0003-multitenancy-across-fabric.html">Start lesson 3</a></p>
+    </div>
+  </div>
+
+  <h2>Quick-reference maps</h2>
+  <table>
+    <thead><tr><th>Reference</th><th>Use it to</th></tr></thead>
+    <tbody>
+      <tr><td><a href="reference/atlas-change-map.html">Atlas change map</a></td><td>Locate persistence ownership and assess blast radius.</td></tr>
+      <tr><td><a href="reference/dapr-eventing-change-map.html">Dapr eventing change map</a></td><td>Locate eventing ownership and identity hops.</td></tr>
+      <tr><td><a href="reference/multitenancy-change-map.html">Multitenancy change map</a></td><td>Trace a tenant addition or isolation failure.</td></tr>
+    </tbody>
+  </table>
+
+  <p class="fine">Lessons are derived from repository code and primary vendor documentation.</p>
+</main>
+</body>
+</html>
