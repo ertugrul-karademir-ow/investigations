@@ -38,6 +38,16 @@
   Primary source for durable messaging and topic fan-out semantics.
 - [Microsoft Learn: AKS workload identity](https://learn.microsoft.com/azure/aks/workload-identity-overview)
   Primary source for Kubernetes service-account token federation into managed identities.
+- [Kubernetes documentation: Configure Service Accounts for Pods](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)
+  Primary source for how a Pod selects a namespace-scoped ServiceAccount and receives its Kubernetes identity.
+- [Repository: application workload identities](https://github.com/owg-digital/rtls-fabric-infrastructure/blob/master/tf/modules/compute/cluster-bootstrap/application_identities.tf)
+  Computes namespaces needing application identities, creates Azure federation, and grants Service Bus or MongoDB Atlas access.
+- [Repository: application ServiceAccount template](https://github.com/owg-digital/rtls-fabric-infrastructure/blob/master/charts/cluster-apps/namespace/latest/templates/application-service-account.yaml)
+  Creates the annotated Kubernetes `application-sa` from identity values supplied by Terraform through Argo CD.
+- [Repository: application identity Argo CD handoff](https://github.com/owg-digital/rtls-fabric-infrastructure/blob/master/tf/modules/compute/cluster-bootstrap/argocd_app_of_apps.tf)
+  Passes each namespace's managed identity client ID and tenant ID into the namespace chart.
+- [Repository: Product Switching deployment chart](https://github.com/owg-digital/rtls-fabric-deployments/tree/master/product-switching/chart/latest)
+  Concrete example of Deployments, an Argo Workflow, Dapr, and Kubernetes RBAC using `application-sa`.
 - [Repository: KFL multitenant infrastructure](../rtls-fabric-infrastructure/tf/prod/ie-db/kfl/compute-bootstrap/locals.tf)
   Concrete Assortment and Promo namespaces with tenant-specific and common MongoDB databases. Use for: tracing infrastructure isolation.
 - [Repository: Assortment KFL deployment](../rtls-fabric-deployments/assortment/prod/clients/kfl/kfl.values.yaml)
